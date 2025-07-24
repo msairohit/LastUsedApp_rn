@@ -1,0 +1,4 @@
+Add a new page to manage categories (categoryManager).
+Save to DB instead of local storage.
+Login functionality
+UI update.
