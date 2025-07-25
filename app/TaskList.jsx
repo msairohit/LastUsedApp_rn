@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import dataService from '../services/firestoreDataService';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import { Picker } from '@react-native-picker/picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { useLocalSearchParams } from 'expo-router';
 dayjs.extend(relativeTime);
 
 const defaultCategories = {
@@ -17,14 +18,17 @@ const defaultCategories = {
     "Water Filter Changed", "Washing Machine Cleaned", "Lights Replaced",
     "Gas Cylinder Refilled", "Generator Oil Changed", "Fire Alarm Tested", "Roof/Gutter Cleaned"
   ],
-  "Digital/Bills": [
+  "Digital_Bills": [
     "Mobile Recharged", "Internet Bill Paid", "Electricity Bill Paid",
     "Netflix Subscription Renewed", "Phone Storage Cleared", "Password Changed",
     "Data Backup Done", "Antivirus Updated", "VPN Subscription Paid", "Credit Card Bill Paid"
   ]
 };
 
-const TaskList = ({ categories }) => {
+const TaskList = () => {
+  const { categories } = useLocalSearchParams();
+  // In a real app, you would get the userId from your authentication state
+  const userId = 'test-user-123';
   const [localCategories, setLocalCategories] = useState(defaultCategories);
   const [selectedCategory, setSelectedCategory] = useState('');
   const [selectedSubcategory, setSelectedSubcategory] = useState('');
@@ -35,11 +39,18 @@ const TaskList = ({ categories }) => {
 
   // Load categories from props or fallback to default
   useEffect(() => {
-    if (categories && Object.keys(categories).length > 0) {
-      setLocalCategories(categories);
-    } else {
-      setLocalCategories(defaultCategories);
+    try {
+      if (categories) {
+        const parsedCategories = JSON.parse(categories);
+        if (Object.keys(parsedCategories).length > 0) {
+          setLocalCategories(parsedCategories);
+          return;
+        }
+      }
+    } catch (e) {
+      console.error("Failed to parse categories from route params:", e);
     }
+    setLocalCategories(defaultCategories);
   }, [categories]);
 
   // Set initial selected category and subcategory when categories change
@@ -53,31 +64,48 @@ const TaskList = ({ categories }) => {
 
   // Load timestamps for selected category
   useEffect(() => {
-    if (!selectedCategory) return;
+    if (!userId) return;
     (async () => {
-      const stored = await AsyncStorage.getItem(`timestamps_${selectedCategory}`);
-      if (stored) setTimestamps(JSON.parse(stored));
-      else setTimestamps({});
+      const storedTimestamps = await dataService.getTimestamps(userId);
+      setTimestamps(storedTimestamps || {});
     })();
-  }, [selectedCategory]);
+  }, [userId]);
 
   // Add timestamp for subcategory
   const handleAddTimestamp = async (task, date) => {
-    const updated = {
+    const newTimestamp = date.getTime();
+    // Optimistic UI update
+    const categoryTimestamps = timestamps[selectedCategory] || {};
+    const subcategoryTimestamps = categoryTimestamps[task] ? [...categoryTimestamps[task], newTimestamp] : [newTimestamp];
+    const updatedTimestamps = {
       ...timestamps,
-      [task]: timestamps[task] ? [...timestamps[task], date.getTime()] : [date.getTime()]
+      [selectedCategory]: {
+        ...categoryTimestamps,
+        [task]: subcategoryTimestamps
+      }
     };
-    setTimestamps(updated);
-    await AsyncStorage.setItem(`timestamps_${selectedCategory}`, JSON.stringify(updated));
+    setTimestamps(updatedTimestamps);
+
+    // Persist to Firestore
+    await dataService.addTimestamp(userId, selectedCategory, task, newTimestamp);
   };
 
   // Remove timestamp for subcategory
-  const handleRemoveTimestamp = async (task, index) => {
-    const arr = timestamps[task] ? [...timestamps[task]] : [];
-    arr.splice(index, 1);
-    const updated = { ...timestamps, [task]: arr };
-    setTimestamps(updated);
-    await AsyncStorage.setItem(`timestamps_${selectedCategory}`, JSON.stringify(updated));
+  const handleRemoveTimestamp = async (task, timestampToRemove) => {
+    // Optimistic UI update
+    const categoryTimestamps = timestamps[selectedCategory] || {};
+    const subcategoryTimestamps = (categoryTimestamps[task] || []).filter(ts => ts !== timestampToRemove);
+    const updatedTimestamps = {
+      ...timestamps,
+      [selectedCategory]: {
+        ...categoryTimestamps,
+        [task]: subcategoryTimestamps
+      }
+    };
+    setTimestamps(updatedTimestamps);
+
+    // Persist to Firestore
+    await dataService.removeTimestamp(userId, selectedCategory, task, timestampToRemove);
   };
 
   // Show DateTime picker
@@ -107,7 +135,7 @@ const TaskList = ({ categories }) => {
   };
 
   const subcategories = localCategories[selectedCategory] || [];
-  const subTimestamps = (timestamps[selectedSubcategory] || []).sort((a, b) => a - b);
+  const subTimestamps = ((timestamps[selectedCategory] || {})[selectedSubcategory] || []).sort((a, b) => a - b);
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
@@ -158,7 +186,7 @@ const TaskList = ({ categories }) => {
                 </Text>
                 <TouchableOpacity
                   style={styles.removeBtn}
-                  onPress={() => handleRemoveTimestamp(selectedSubcategory, subTimestamps.length - 1 - idx)}
+                  onPress={() => handleRemoveTimestamp(selectedSubcategory, ts)}
                 >
                   <Text style={styles.removeText}>✕</Text>
                 </TouchableOpacity>

@@ -2,3 +2,6 @@ Add a new page to manage categories (categoryManager).
 Save to DB instead of local storage.
 Login functionality
 UI update.
+
+for gemini ai:
+If the output limit is exceeding instead of removing entirely, as I told earlier, give me the 1st file and then tell me what are the next steps, I will apply that change and request for the next set of file changes as a new query. pls make this apply to the profile and follow this from now on
