@@ -14,21 +14,22 @@ export default function HomePage() {
     const [loading, setLoading] = useState(true);
     const [categories, setCategories] = useState({});
 
+    const loadData = async () => {
+        console.log("load data is called")
+        if (!userId) return; // Don't load data if there's no user
+        try {
+            // Ensure user data is initialized with defaults if they are a new user
+            await dataService.initializeUserData(userId);
+            // Fetch the user-specific categories
+            const fetchedCategories = await dataService.getCategories(userId);
+            setCategories(fetchedCategories);
+        } catch (error) {
+            console.error("Failed to load data:", error);
+        } finally {
+            setLoading(false);
+        }
+    };
     useEffect(() => {
-        const loadData = async () => {
-            if (!userId) return; // Don't load data if there's no user
-            try {
-                // Ensure user data is initialized with defaults if they are a new user
-                await dataService.initializeUserData(userId);
-                // Fetch the user-specific categories
-                const fetchedCategories = await dataService.getCategories(userId);
-                setCategories(fetchedCategories);
-            } catch (error) {
-                console.error("Failed to load data:", error);
-            } finally {
-                setLoading(false);
-            }
-        };
         loadData();
     }, [userId]); // Re-run if userId changes
 
@@ -57,10 +58,14 @@ export default function HomePage() {
                         <Feather name="settings" size={22} color="#fff" />
                         <Text style={styles.buttonText}>Manage Categories</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.button} onPress={() => router.push({
-                        pathname: "/TaskList",
-                        params: { categories: JSON.stringify(categories) }
-                    })}>
+                    <TouchableOpacity style={styles.button} onPress={() => {
+                        console.log("view list");
+                        loadData();
+                        router.push({
+                            pathname: "/TaskList",
+                            params: { categories: JSON.stringify(categories) }
+                        })
+                    }}>
                         <Feather name="list" size={22} color="#fff" />
                         <Text style={styles.buttonText}>View Your Lists</Text>
                     </TouchableOpacity>

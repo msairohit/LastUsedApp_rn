@@ -170,7 +170,7 @@ const TaskList = () => {
       <View style={styles.card}>
         <Text style={styles.task}>{selectedSubcategory}</Text>
         <TouchableOpacity style={styles.button} onPress={openPicker}>
-          <Text style={styles.buttonText}>Add Timestamp</Text>
+          <Text style={styles.buttonText}>Add Usage</Text>
         </TouchableOpacity>
         <Text style={styles.label}>History:</Text>
         {subTimestamps.length === 0 ? (

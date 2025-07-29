@@ -84,36 +84,153 @@ const getTimestamps = async (userId) => {
     }
 };
 
-const addItem = async (userId, category, newItem) => {
-    if (!userId) {
-        console.error("User ID is required to add an item.");
+const addCategory = async (userId, categoryName) => {
+    if (!userId || !categoryName) {
+        console.error("User ID and category name are required.");
         return;
     }
     const userDocRef = doc(db, 'users', userId);
     try {
-        // Use dot notation to update a field in a map.
         await updateDoc(userDocRef, {
-            [`categories.${category}`]: arrayUnion(newItem)
+            [`categories.${categoryName}`]: []
         });
-        console.log(`'${newItem}' added to '${category}' for user ${userId}`);
+        console.log(`Category '${categoryName}' added for user ${userId}`);
     } catch (e) {
-        console.error(`Failed to add item for user ${userId}:`, e);
+        console.error(`Failed to add category for user ${userId}:`, e);
     }
 };
 
-const removeItem = async (userId, category, itemToRemove) => {
-    if (!userId) {
-        console.error("User ID is required to remove an item.");
+const removeCategory = async (userId, categoryName) => {
+    if (!userId || !categoryName) {
+        console.error("User ID and category name are required.");
+        return;
+    }
+    const userDocRef = doc(db, 'users', userId);
+    try {
+        // Atomically remove the category and its timestamps
+        const userDoc = await getDoc(userDocRef);
+        const userData = userDoc.data();
+        const currentCategories = userData.categories;
+        const currentTimestamps = userData.timestamps;
+
+        delete currentCategories[categoryName];
+        if (currentTimestamps && currentTimestamps[categoryName]) {
+            delete currentTimestamps[categoryName];
+        }
+
+        await setDoc(userDocRef, { ...userData, categories: currentCategories, timestamps: currentTimestamps });
+        console.log(`Category '${categoryName}' and its timestamps removed for user ${userId}`);
+    } catch (e) {
+        console.error(`Failed to remove category for user ${userId}:`, e);
+    }
+};
+
+const updateCategoryName = async (userId, oldName, newName) => {
+    if (!userId || !oldName || !newName) {
+        console.error("User ID, old name, and new name are required.");
+        return;
+    }
+    const userDocRef = doc(db, 'users', userId);
+    try {
+        const userDoc = await getDoc(userDocRef);
+        const userData = userDoc.data();
+        const currentCategories = userData.categories;
+        const currentTimestamps = userData.timestamps;
+
+        if (currentCategories[oldName]) {
+            // Copy subcategories and timestamps to the new category name
+            currentCategories[newName] = currentCategories[oldName];
+            delete currentCategories[oldName];
+
+            if (currentTimestamps && currentTimestamps[oldName]) {
+                currentTimestamps[newName] = currentTimestamps[oldName];
+                delete currentTimestamps[oldName];
+            }
+
+            await setDoc(userDocRef, { ...userData, categories: currentCategories, timestamps: currentTimestamps });
+            console.log(`Category '${oldName}' renamed to '${newName}' for user ${userId}`);
+        }
+    } catch (e) {
+        console.error(`Failed to update category name for user ${userId}:`, e);
+    }
+};
+
+const addSubcategory = async (userId, category, subcategory) => {
+    if (!userId || !category || !subcategory) {
+        console.error("User ID, category, and subcategory are required.");
         return;
     }
     const userDocRef = doc(db, 'users', userId);
     try {
         await updateDoc(userDocRef, {
-            [`categories.${category}`]: arrayRemove(itemToRemove)
+            [`categories.${category}`]: arrayUnion(subcategory)
         });
-        console.log(`'${itemToRemove}' removed from '${category}' for user ${userId}`);
+        console.log(`'${subcategory}' added to '${category}' for user ${userId}`);
     } catch (e) {
-        console.error(`Failed to remove item for user ${userId}:`, e);
+        console.error(`Failed to add subcategory for user ${userId}:`, e);
+    }
+};
+
+const removeSubcategory = async (userId, category, subcategory) => {
+    if (!userId || !category || !subcategory) {
+        console.error("User ID, category, and subcategory are required.");
+        return;
+    }
+    const userDocRef = doc(db, 'users', userId);
+    try {
+        // Atomically remove the subcategory and its timestamps
+        const userDoc = await getDoc(userDocRef);
+        const userData = userDoc.data();
+        const currentCategories = userData.categories;
+        const currentTimestamps = userData.timestamps;
+
+        // Remove subcategory from the category list
+        if (currentCategories[category]) {
+            currentCategories[category] = currentCategories[category].filter(item => item !== subcategory);
+        }
+
+        // Remove timestamps for the subcategory
+        if (currentTimestamps && currentTimestamps[category] && currentTimestamps[category][subcategory]) {
+            delete currentTimestamps[category][subcategory];
+        }
+
+        await setDoc(userDocRef, { ...userData, categories: currentCategories, timestamps: currentTimestamps });
+        console.log(`'${subcategory}' and its timestamps removed from '${category}' for user ${userId}`);
+    } catch (e) {
+        console.error(`Failed to remove subcategory for user ${userId}:`, e);
+    }
+};
+
+const updateSubcategoryName = async (userId, category, oldName, newName) => {
+    if (!userId || !category || !oldName || !newName) {
+        console.error("User ID, category, old name, and new name are required.");
+        return;
+    }
+    const userDocRef = doc(db, 'users', userId);
+    try {
+        const userDoc = await getDoc(userDocRef);
+        const userData = userDoc.data();
+        const currentCategories = userData.categories;
+        const currentTimestamps = userData.timestamps;
+
+        // Update subcategory name in the category list
+        if (currentCategories[category]) {
+            const index = currentCategories[category].indexOf(oldName);
+            if (index > -1) {
+                currentCategories[category][index] = newName;
+            }
+        }
+
+        // Move timestamps to the new subcategory name
+        if (currentTimestamps && currentTimestamps[category] && currentTimestamps[category][oldName]) {
+            currentTimestamps[category][newName] = currentTimestamps[category][oldName];
+            delete currentTimestamps[category][oldName];
+        }
+
+        await setDoc(userDocRef, { ...userData, categories: currentCategories, timestamps: currentTimestamps });
+        console.log(`Subcategory '${oldName}' in '${category}' renamed to '${newName}' for user ${userId}`);
+    } catch (e) {
+        console.error(`Failed to update subcategory name for user ${userId}:`, e);
     }
 };
 
@@ -155,8 +272,12 @@ export default {
     initializeUserData,
     getCategories,
     getTimestamps,
-    addItem,
-    removeItem,
+    addCategory,
+    removeCategory,
+    updateCategoryName,
+    addSubcategory,
+    removeSubcategory,
+    updateSubcategoryName,
     addTimestamp,
     removeTimestamp
 };
