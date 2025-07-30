@@ -1,7 +1,8 @@
 import { db } from '../configs/firebaseConfig'; // Import the Firestore instance
 import { doc, setDoc, getDoc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
 
-const defaultCategories = {
+// Export defaultCategories to be used as a single source of truth
+export const defaultCategories = {
     "Personal Care": [
         "Haircut", "Beard Trim", "Nail Clipping", "Skincare Routine", "Dental Cleaning",
         "Eyebrow Threading", "Hair Coloring", "Shaving", "Hair Oiling", "Pedicure"
@@ -23,6 +24,7 @@ const initializeUserData = async (userId) => {
         console.error("User ID is required to initialize user data.");
         return;
     }
+    console.log("Initializing for user", userId)
     const userDocRef = doc(db, 'users', userId);
     try {
         const docSnapshot = await getDoc(userDocRef);
@@ -33,11 +35,15 @@ const initializeUserData = async (userId) => {
         } else {
             // Check if timestamps field exists, if not, add it.
             const data = docSnapshot.data();
+            console.log("data: ", data)
             if (data.timestamps === undefined) {
                 await updateDoc(userDocRef, { timestamps: {} });
                 console.log(`Added timestamps field for user ${userId}`);
-            } else {
-                console.log(`User ${userId} already has data. Skipping initialization.`);
+            }
+            // Also check for categories, in case an old user document exists without it
+            if (data.categories === undefined) {
+                await updateDoc(userDocRef, { categories: defaultCategories });
+                console.log(`Added categories field for user ${userId}`);
             }
         }
     } catch (e) {
@@ -54,10 +60,10 @@ const getCategories = async (userId) => {
     try {
         const docSnapshot = await getDoc(userDocRef);
         if (docSnapshot.exists()) {
-            return docSnapshot.data().categories;
+            // Ensure categories field exists, otherwise return default
+            return docSnapshot.data().categories || defaultCategories;
         }
         // If the user has no data, return the default set.
-        // The app should call initializeUserData on login/signup to prevent this.
         console.log(`No categories found for user ${userId}, returning default set.`);
         return defaultCategories;
     } catch (e) {
