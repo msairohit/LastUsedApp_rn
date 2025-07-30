@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, TouchableOpacity, View, Text, StyleSheet, SafeAreaView, TextInput, Button, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -11,7 +11,7 @@ import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 export default function HomePage() {
     // In a real app, you would get the userId from your authentication state
     // (e.g., from Firebase Auth, a context provider, etc.).
-    const userId = 'test-user-123';
+    // const userId = 'test-user-123';
 
     const router = useRouter();
     const [loading, setLoading] = useState(true);
@@ -21,16 +21,47 @@ export default function HomePage() {
     const [password, setPassword] = useState('');
     const [user, setUser] = useState(null); // Track user authentication state
     const [actionLoading, setActionLoading] = useState(false); // Show a loader for sign-in/sign-up actions
-    // Listener for authentication state changes
+    const [userId, setUserId] = useState(null); // Track user ID
+
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
             setUser(currentUser);
+            // Set loading to false here; loadData will manage its own loading state
             setLoading(false);
         });
 
-        // Cleanup subscription on unmount
         return () => unsubscribe();
     }, []);
+
+    // A separate effect to load data when the user first logs in or changes
+    useEffect(() => {
+        if (user) {
+            console.log("User changed, loading initial data.");
+            loadData();
+        }
+    }, [user, loadData]); // Runs when user or loadData function changes
+
+    // Define loadData here, wrapped in useCallback
+    const loadData = useCallback(async () => {
+        // Guard clause: only run if there is a logged-in user
+        if (!user) {
+            console.log("No user found, skipping data load.");
+            return;
+        }
+
+        console.log("Manual refresh triggered for:", user.email);
+        setLoading(true); // Show a loading indicator for the refresh
+        try {
+            const userId = user.email;
+            await dataService.initializeUserData(userId);
+            const fetchedCategories = await dataService.getCategories(userId);
+            setCategories(fetchedCategories);
+        } catch (error) {
+            console.error("Failed to reload data:", error);
+        } finally {
+            setLoading(false);
+        }
+    }, [user]); // The function will update if the user object changes
 
     // Handle user sign up
     const handleSignUp = async () => {
@@ -92,25 +123,6 @@ export default function HomePage() {
             console.error('Sign out error:', error.code, error.message);
         }
     };
-
-    const loadData = async () => {
-        console.log("load data is called")
-        if (!userId) return; // Don't load data if there's no user
-        try {
-            // Ensure user data is initialized with defaults if they are a new user
-            await dataService.initializeUserData(userId);
-            // Fetch the user-specific categories
-            const fetchedCategories = await dataService.getCategories(userId);
-            setCategories(fetchedCategories);
-        } catch (error) {
-            console.error("Failed to load data:", error);
-        } finally {
-            setLoading(false);
-        }
-    };
-    useEffect(() => {
-        loadData();
-    }, [userId]); // Re-run if userId changes
 
     if (loading) {
         return (

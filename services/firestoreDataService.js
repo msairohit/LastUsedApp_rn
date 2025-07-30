@@ -23,6 +23,7 @@ const initializeUserData = async (userId) => {
         console.error("User ID is required to initialize user data.");
         return;
     }
+    console.log("Initializing for user", userId)
     const userDocRef = doc(db, 'users', userId);
     try {
         const docSnapshot = await getDoc(userDocRef);
@@ -33,6 +34,7 @@ const initializeUserData = async (userId) => {
         } else {
             // Check if timestamps field exists, if not, add it.
             const data = docSnapshot.data();
+            console.log("data: ", data)
             if (data.timestamps === undefined) {
                 await updateDoc(userDocRef, { timestamps: {} });
                 console.log(`Added timestamps field for user ${userId}`);

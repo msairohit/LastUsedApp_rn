@@ -6,6 +6,8 @@ import relativeTime from 'dayjs/plugin/relativeTime';
 import { Picker } from '@react-native-picker/picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useLocalSearchParams } from 'expo-router';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth, db } from '../configs/firebaseConfig'; // Import the auth object
 dayjs.extend(relativeTime);
 
 const defaultCategories = {
@@ -28,7 +30,7 @@ const defaultCategories = {
 const TaskList = () => {
   const { categories } = useLocalSearchParams();
   // In a real app, you would get the userId from your authentication state
-  const userId = 'test-user-123';
+  // const userId = 'test-user-123';
   const [localCategories, setLocalCategories] = useState(defaultCategories);
   const [selectedCategory, setSelectedCategory] = useState('');
   const [selectedSubcategory, setSelectedSubcategory] = useState('');
@@ -36,6 +38,21 @@ const TaskList = () => {
   const [showPicker, setShowPicker] = useState(false);
   const [pickerDate, setPickerDate] = useState(new Date());
   const [mode, setMode] = useState('date');
+  const [user, setUser] = useState(null); // Track user authentication state
+  const [userId, setUserId] = useState(null); // Track user ID
+
+  // Listener for authentication state changes
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      console.log('User:', currentUser.email);
+      userId = currentUser.email;
+      setLoading(false);
+    });
+
+    // Cleanup subscription on unmount
+    return () => unsubscribe();
+  }, []);
 
   // Load categories from props or fallback to default
   useEffect(() => {
