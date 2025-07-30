@@ -1,133 +1,99 @@
-import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, TouchableOpacity, View, Text, StyleSheet, SafeAreaView, TextInput, Button, Alert } from 'react-native';
+import React, { useEffect } from 'react';
+import { ActivityIndicator, View, Text, StyleSheet, SafeAreaView, TextInput, Alert, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
-import dataService from '../services/firestoreDataService';
+import dataService, { defaultCategories } from '../services/firestoreDataService';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
-import { auth, db } from '../configs/firebaseConfig'; // Import the auth object
+import { auth, db } from '../configs/firebaseConfig';
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, withSpring, FadeInUp, FadeInDown } from 'react-native-reanimated';
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export default function HomePage() {
-    // In a real app, you would get the userId from your authentication state
-    // (e.g., from Firebase Auth, a context provider, etc.).
-    // const userId = 'test-user-123';
-
     const router = useRouter();
-    const [loading, setLoading] = useState(true);
-    const [categories, setCategories] = useState({});
+    const [loading, setLoading] = React.useState(true);
+    const [email, setEmail] = React.useState('');
+    const [password, setPassword] = React.useState('');
+    const [user, setUser] = React.useState(null);
+    const [actionLoading, setActionLoading] = React.useState(false);
 
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [user, setUser] = useState(null); // Track user authentication state
-    const [actionLoading, setActionLoading] = useState(false); // Show a loader for sign-in/sign-up actions
-    const [userId, setUserId] = useState(null); // Track user ID
+    const formOpacity = useSharedValue(0);
+    const logoScale = useSharedValue(0.5);
+
+    const formAnimatedStyle = useAnimatedStyle(() => {
+        return {
+            opacity: formOpacity.value,
+        };
+    });
+
+    const logoAnimatedStyle = useAnimatedStyle(() => {
+        return {
+            transform: [{ scale: logoScale.value }],
+        };
+    });
+
+    useEffect(() => {
+        logoScale.value = withSpring(1, { damping: 12 });
+        formOpacity.value = withTiming(1, { duration: 800 });
+    }, []);
 
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
             setUser(currentUser);
-            // Set loading to false here; loadData will manage its own loading state
             setLoading(false);
         });
-
         return () => unsubscribe();
     }, []);
 
-    // A separate effect to load data when the user first logs in or changes
-    useEffect(() => {
-        if (user) {
-            console.log("User changed, loading initial data.");
-            loadData();
-        }
-    }, [user, loadData]); // Runs when user or loadData function changes
-
-    // Define loadData here, wrapped in useCallback
-    const loadData = useCallback(async () => {
-        // Guard clause: only run if there is a logged-in user
-        if (!user) {
-            console.log("No user found, skipping data load.");
-            return;
-        }
-
-        console.log("Manual refresh triggered for:", user.email);
-        setLoading(true); // Show a loading indicator for the refresh
-        try {
-            const userId = user.email;
-            await dataService.initializeUserData(userId);
-            const fetchedCategories = await dataService.getCategories(userId);
-            setCategories(fetchedCategories);
-        } catch (error) {
-            console.error("Failed to reload data:", error);
-        } finally {
-            setLoading(false);
-        }
-    }, [user]); // The function will update if the user object changes
-
-    // Handle user sign up
     const handleSignUp = async () => {
-        console.log("inside signup", auth, email, password)
         if (!email || !password) {
             Alert.alert("Error", "Please enter both email and password.");
             return;
         }
         setActionLoading(true);
         try {
-            // Create user with email and password
             const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-            console.log('User signed up:', userCredential.user.email);
-
-            // Create a document for the user in the 'users' collection
             await setDoc(doc(db, "users", userCredential.user.email), {
                 email: userCredential.user.email,
-                createdAt: serverTimestamp() // Use server timestamp for creation date
+                createdAt: serverTimestamp(),
+                categories: defaultCategories,
+                timestamps: {}
             });
-            console.log('User document created in Firestore');
-
-            // The onAuthStateChanged listener will handle setting the user state,
-            // so no need to call setUser here.
         } catch (error) {
             Alert.alert("Sign Up Error", error.message);
-            console.error('Sign up error:', error.code, error.message);
         } finally {
             setActionLoading(false);
         }
     };
 
-    // Handle user sign in
     const handleSignIn = async () => {
-        console.log("entered signin", email, password, auth)
         if (!email || !password) {
             Alert.alert("Error", "Please enter both email and password.");
             return;
         }
         setActionLoading(true);
         try {
-            const userCredential = await signInWithEmailAndPassword(auth, email, password);
-            console.log('User signed in:', userCredential.user.email);
-            // The onAuthStateChanged listener will handle setting the user state
+            await signInWithEmailAndPassword(auth, email, password);
         } catch (error) {
             Alert.alert("Sign In Error", error.message);
-            console.error('Sign in error:', error.code, error.message);
         } finally {
             setActionLoading(false);
         }
     };
 
-    // Handle user sign out
     const handleSignOut = async () => {
         try {
             await signOut(auth);
-            console.log('User signed out');
         } catch (error) {
             Alert.alert("Sign Out Error", error.message);
-            console.error('Sign out error:', error.code, error.message);
         }
     };
 
     if (loading) {
         return (
             <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#00C896" />
+                <ActivityIndicator size="large" color="#10B981" />
             </View>
         );
     }
@@ -135,44 +101,46 @@ export default function HomePage() {
     return (
         <SafeAreaView style={styles.safeArea}>
             {user ? (
-                // If user is logged in, show a welcome screen
-                <View style={styles.authContainer}>
-                    <Text style={styles.title}>Welcome!</Text>
-                    <Text style={styles.userEmail}>{user.email}</Text>
-                    <View style={styles.buttonContainer}>
-                        <Button title="Sign Out" onPress={handleSignOut} color="#dc3545" />
+                <Animated.View style={styles.container} entering={FadeInUp.duration(500)}>
+                    <View style={styles.welcomeHeader}>
+                        <Text style={styles.welcomeTitle}>Welcome Back!</Text>
+                        <Text style={styles.userEmail}>{user.email}</Text>
                     </View>
-                    <View style={styles.header}>
-                        <Feather name="clock" size={64} color="#00C896" />
+
+                    <Animated.View style={logoAnimatedStyle}>
+                        <Feather name="clock" size={80} color="#10B981" />
+                    </Animated.View>
+
+                    <View style={styles.mainContent}>
                         <Text style={styles.title}>LastUsed</Text>
                         <Text style={styles.subtitle}>Never forget when you last did something.</Text>
                     </View>
 
-                    <View style={styles.buttonContainer}>
-                        <TouchableOpacity style={styles.button} onPress={() => router.push("/CategoryManager")}>
-                            <Feather name="settings" size={22} color="#fff" />
-                            <Text style={styles.buttonText}>Manage Categories</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.button} onPress={() => {
-                            console.log("view list");
-                            loadData();
-                            router.push({
-                                pathname: "/TaskList",
-                                params: { categories: JSON.stringify(categories) }
-                            })
-                        }}>
+                    <View style={styles.buttonGroup}>
+                        <AnimatedPressable style={styles.button} onPress={() => router.push("/TaskList")} entering={FadeInDown.duration(500).delay(200)}>
                             <Feather name="list" size={22} color="#fff" />
                             <Text style={styles.buttonText}>View Your Lists</Text>
-                        </TouchableOpacity>
+                        </AnimatedPressable>
+                        <AnimatedPressable style={styles.button} onPress={() => router.push("/CategoryManager")} entering={FadeInDown.duration(500).delay(400)}>
+                            <Feather name="settings" size={22} color="#fff" />
+                            <Text style={styles.buttonText}>Manage Categories</Text>
+                        </AnimatedPressable>
+                        <AnimatedPressable style={[styles.button, styles.signOutButton]} onPress={handleSignOut} entering={FadeInDown.duration(500).delay(600)}>
+                            <Feather name="log-out" size={22} color="#fff" />
+                            <Text style={styles.buttonText}>Sign Out</Text>
+                        </AnimatedPressable>
                     </View>
-                </View>
+                </Animated.View>
             ) : (
-                // If user is not logged in, show the sign-in/sign-up form
-                <View style={styles.authContainer}>
-                    <Text style={styles.title}>Firebase Auth</Text>
+                <Animated.View style={[styles.authContainer, formAnimatedStyle]}>
+                    <Animated.View style={logoAnimatedStyle} entering={FadeInUp.duration(500)}>
+                        <Feather name="clock" size={64} color="#10B981" />
+                    </Animated.View>
+                    <Text style={styles.authTitle}>Get Started</Text>
                     <TextInput
                         style={styles.input}
                         placeholder="Email"
+                        placeholderTextColor="#9CA3AF"
                         value={email}
                         onChangeText={setEmail}
                         keyboardType="email-address"
@@ -181,62 +149,75 @@ export default function HomePage() {
                     <TextInput
                         style={styles.input}
                         placeholder="Password"
+                        placeholderTextColor="#9CA3AF"
                         value={password}
                         onChangeText={setPassword}
                         secureTextEntry
                     />
                     {actionLoading ? (
-                        <ActivityIndicator size="large" color="#007bff" style={{ marginVertical: 10 }} />
+                        <ActivityIndicator size="large" color="#10B981" style={{ marginVertical: 20 }} />
                     ) : (
-                        <>
-                            <View style={styles.buttonContainer}>
-                                <Button title="Sign In" onPress={handleSignIn} />
-                            </View>
-                            <View style={styles.buttonContainer}>
-                                <Button title="Sign Up" onPress={handleSignUp} color="#28a745" />
-                            </View>
-                        </>
+                        <View style={styles.authButtonGroup}>
+                            <Pressable style={styles.authButton} onPress={handleSignIn}>
+                                <Text style={styles.authButtonText}>Sign In</Text>
+                            </Pressable>
+                            <Pressable style={[styles.authButton, styles.signUpButton]} onPress={handleSignUp}>
+                                <Text style={styles.authButtonText}>Sign Up</Text>
+                            </Pressable>
+                        </View>
                     )}
-                </View>
+                </Animated.View>
             )}
         </SafeAreaView>
     );
 }
 
 const styles = StyleSheet.create({
+    safeArea: {
+        flex: 1,
+        backgroundColor: '#111827',
+    },
     loadingContainer: {
         flex: 1,
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: '#181A20',
+        backgroundColor: '#111827',
     },
     container: {
-        flex: 1,
-    },
-    safeArea: {
         flex: 1,
         alignItems: 'center',
         justifyContent: 'space-around',
         padding: 20,
     },
-    header: {
+    welcomeHeader: {
         alignItems: 'center',
-        marginBottom: 60,
+    },
+    welcomeTitle: {
+        fontSize: 24,
+        fontWeight: '600',
+        color: '#F9FAFB',
+    },
+    userEmail: {
+        fontSize: 16,
+        color: '#9CA3AF',
+        marginTop: 4,
+    },
+    mainContent: {
+        alignItems: 'center',
     },
     title: {
-        fontSize: 48,
+        fontSize: 52,
         fontWeight: 'bold',
         color: '#fff',
-        marginTop: 20,
         letterSpacing: 1,
     },
     subtitle: {
         fontSize: 18,
-        color: '#a0a0a0',
+        color: '#9CA3AF',
         marginTop: 10,
         textAlign: 'center',
     },
-    buttonContainer: {
+    buttonGroup: {
         width: '100%',
         alignItems: 'center',
     },
@@ -244,75 +225,71 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: '#00C896',
-        paddingVertical: 15,
-        paddingHorizontal: 30,
+        backgroundColor: '#10B981',
+        paddingVertical: 16,
+        paddingHorizontal: 32,
         borderRadius: 30,
-        marginBottom: 20,
-        width: '80%',
-        shadowColor: '#000',
-        shadowOffset: {
-            width: 0,
-            height: 4,
-        },
+        marginBottom: 16,
+        width: '90%',
+        shadowColor: '#059669',
+        shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
-        shadowRadius: 4.65,
+        shadowRadius: 5,
         elevation: 8,
     },
     buttonText: {
         color: '#fff',
         fontSize: 18,
-        fontWeight: 'bold',
-        marginLeft: 10,
+        fontWeight: '600',
+        marginLeft: 12,
     },
-    container: {
+    signOutButton: {
+        backgroundColor: '#EF4444',
+        shadowColor: '#DC2626',
+    },
+    // Auth Screen Styles
+    authContainer: {
         flex: 1,
-        backgroundColor: '#f8f9fa',
-        alignItems: 'center',
         justifyContent: 'center',
+        alignItems: 'center',
         padding: 20,
     },
-    authContainer: {
-        width: '100%',
-        backgroundColor: '#1C2534',
-        maxWidth: 400,
-        padding: 25,
-        borderRadius: 10,
-        shadowColor: '#000',
-        shadowOffset: {
-            width: 0,
-            height: 2,
-        },
-        shadowOpacity: 0.25,
-        shadowRadius: 3.84,
-        elevation: 5,
-        alignItems: 'center',
-    },
-    title: {
-        fontSize: 28,
+    authTitle: {
+        fontSize: 32,
         fontWeight: 'bold',
-        marginBottom: 20,
-        color: '#ffffffff',
-    },
-    userEmail: {
-        fontSize: 18,
-        marginBottom: 20,
-        color: '#6c757d',
+        color: '#F9FAFB',
+        marginBottom: 30,
+        marginTop: 20,
     },
     input: {
         width: '100%',
         height: 50,
-        backgroundColor: '#f1f3f5',
+        backgroundColor: '#1F2937',
+        color: '#F9FAFB',
         borderWidth: 1,
-        borderColor: '#dee2e6',
-        borderRadius: 8,
+        borderColor: '#374151',
+        borderRadius: 12,
         paddingHorizontal: 15,
         marginBottom: 15,
         fontSize: 16,
     },
-    buttonContainer: {
+    authButtonGroup: {
         width: '100%',
-        marginTop: 10,
+        marginTop: 20,
+    },
+    authButton: {
+        backgroundColor: '#10B981',
+        paddingVertical: 15,
+        borderRadius: 12,
         alignItems: 'center',
+        marginBottom: 12,
+    },
+    signUpButton: {
+        backgroundColor: '#374151',
+    },
+    authButtonText: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: 'bold',
     },
 });

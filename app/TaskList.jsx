@@ -1,278 +1,257 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
-import dataService from '../services/firestoreDataService';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, LayoutAnimation, UIManager, Platform } from 'react-native';
+import dataService, { defaultCategories } from '../services/firestoreDataService';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import { Picker } from '@react-native-picker/picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { useLocalSearchParams } from 'expo-router';
 import { onAuthStateChanged } from 'firebase/auth';
-import { auth, db } from '../configs/firebaseConfig'; // Import the auth object
+import { auth } from '../configs/firebaseConfig';
+import { Feather } from '@expo/vector-icons';
+import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
+
 dayjs.extend(relativeTime);
 
-const defaultCategories = {
-  "Personal Care": [
-    "Haircut", "Beard Trim", "Nail Clipping", "Skincare Routine", "Dental Cleaning",
-    "Eyebrow Threading", "Hair Coloring", "Shaving", "Hair Oiling", "Pedicure"
-  ],
-  "Home Maintenance": [
-    "AC Filter Cleaned", "Battery Replaced (Remote)", "Refrigerator Defrosted",
-    "Water Filter Changed", "Washing Machine Cleaned", "Lights Replaced",
-    "Gas Cylinder Refilled", "Generator Oil Changed", "Fire Alarm Tested", "Roof/Gutter Cleaned"
-  ],
-  "Digital_Bills": [
-    "Mobile Recharged", "Internet Bill Paid", "Electricity Bill Paid",
-    "Netflix Subscription Renewed", "Phone Storage Cleared", "Password Changed",
-    "Data Backup Done", "Antivirus Updated", "VPN Subscription Paid", "Credit Card Bill Paid"
-  ]
-};
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 const TaskList = () => {
-  const { categories } = useLocalSearchParams();
-  // In a real app, you would get the userId from your authentication state
-  // const userId = 'test-user-123';
-  const [localCategories, setLocalCategories] = useState(defaultCategories);
+  const [localCategories, setLocalCategories] = useState({});
   const [selectedCategory, setSelectedCategory] = useState('');
   const [selectedSubcategory, setSelectedSubcategory] = useState('');
   const [timestamps, setTimestamps] = useState({});
   const [showPicker, setShowPicker] = useState(false);
   const [pickerDate, setPickerDate] = useState(new Date());
   const [mode, setMode] = useState('date');
-  const [user, setUser] = useState(null); // Track user authentication state
-  const [userId, setUserId] = useState(null); // Track user ID
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  // Listener for authentication state changes
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
-      console.log('User:', currentUser.email);
-      userId = currentUser.email;
-      setLoading(false);
+      if (!currentUser) setLoading(false);
     });
-
-    // Cleanup subscription on unmount
     return () => unsubscribe();
   }, []);
 
-  // Load categories from props or fallback to default
   useEffect(() => {
-    try {
-      if (categories) {
-        const parsedCategories = JSON.parse(categories);
-        if (Object.keys(parsedCategories).length > 0) {
-          setLocalCategories(parsedCategories);
-          return;
-        }
+    if (!user) return;
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        const [userCategories, storedTimestamps] = await Promise.all([
+          dataService.getCategories(user.email),
+          dataService.getTimestamps(user.email)
+        ]);
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        setLocalCategories(userCategories || defaultCategories);
+        setTimestamps(storedTimestamps || {});
+      } catch (error) {
+        console.error("Failed to fetch task list data:", error);
+      } finally {
+        setLoading(false);
       }
-    } catch (e) {
-      console.error("Failed to parse categories from route params:", e);
-    }
-    setLocalCategories(defaultCategories);
-  }, [categories]);
+    };
+    fetchData();
+  }, [user]);
 
-  // Set initial selected category and subcategory when categories change
   useEffect(() => {
     const catKeys = Object.keys(localCategories);
     if (catKeys.length > 0) {
-      setSelectedCategory(catKeys[0]);
-      setSelectedSubcategory(localCategories[catKeys[0]][0]);
+      const firstCategory = catKeys[0];
+      setSelectedCategory(firstCategory);
+      if (localCategories[firstCategory]?.length > 0) {
+        setSelectedSubcategory(localCategories[firstCategory][0]);
+      } else {
+        setSelectedSubcategory('');
+      }
     }
   }, [localCategories]);
 
-  // Load timestamps for selected category
-  useEffect(() => {
-    if (!userId) return;
-    (async () => {
-      const storedTimestamps = await dataService.getTimestamps(userId);
-      setTimestamps(storedTimestamps || {});
-    })();
-  }, [userId]);
-
-  // Add timestamp for subcategory
   const handleAddTimestamp = async (task, date) => {
+    if (!user) return;
     const newTimestamp = date.getTime();
-    // Optimistic UI update
-    const categoryTimestamps = timestamps[selectedCategory] || {};
-    const subcategoryTimestamps = categoryTimestamps[task] ? [...categoryTimestamps[task], newTimestamp] : [newTimestamp];
-    const updatedTimestamps = {
-      ...timestamps,
-      [selectedCategory]: {
-        ...categoryTimestamps,
-        [task]: subcategoryTimestamps
-      }
-    };
-    setTimestamps(updatedTimestamps);
+    const updatedTimestamps = { ...timestamps };
+    if (!updatedTimestamps[selectedCategory]) updatedTimestamps[selectedCategory] = {};
+    if (!updatedTimestamps[selectedCategory][task]) updatedTimestamps[selectedCategory][task] = [];
+    updatedTimestamps[selectedCategory][task].push(newTimestamp);
 
-    // Persist to Firestore
-    await dataService.addTimestamp(userId, selectedCategory, task, newTimestamp);
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setTimestamps(updatedTimestamps);
+    await dataService.addTimestamp(user.email, selectedCategory, task, newTimestamp);
   };
 
-  // Remove timestamp for subcategory
   const handleRemoveTimestamp = async (task, timestampToRemove) => {
-    // Optimistic UI update
-    const categoryTimestamps = timestamps[selectedCategory] || {};
-    const subcategoryTimestamps = (categoryTimestamps[task] || []).filter(ts => ts !== timestampToRemove);
-    const updatedTimestamps = {
-      ...timestamps,
-      [selectedCategory]: {
-        ...categoryTimestamps,
-        [task]: subcategoryTimestamps
-      }
-    };
-    setTimestamps(updatedTimestamps);
+    if (!user) return;
+    const updatedTimestamps = { ...timestamps };
+    if (updatedTimestamps[selectedCategory] && updatedTimestamps[selectedCategory][task]) {
+      updatedTimestamps[selectedCategory][task] = updatedTimestamps[selectedCategory][task].filter(ts => ts !== timestampToRemove);
+    }
 
-    // Persist to Firestore
-    await dataService.removeTimestamp(userId, selectedCategory, task, timestampToRemove);
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setTimestamps(updatedTimestamps);
+    await dataService.removeTimestamp(user.email, selectedCategory, task, timestampToRemove);
   };
 
-  // Show DateTime picker
   const openPicker = () => {
     setPickerDate(new Date());
+    setMode('date');
     setShowPicker(true);
   };
 
-  // Handle DateTime picker change
   const onPickerChange = (event, selectedDate) => {
-    if (event.type === 'dismissed') {
-      setShowPicker(false);
-      setMode('date');
-      return;
-    }
-    if (mode === 'date') {
-      setPickerDate(selectedDate || pickerDate);
-      setMode('time');
-    } else {
-      setPickerDate(selectedDate || pickerDate);
-      setShowPicker(false);
-      setMode('date');
-      if (selectedDate) {
-        handleAddTimestamp(selectedSubcategory, selectedDate);
+    const currentDate = selectedDate || pickerDate;
+    setShowPicker(false);
+    if (event.type === 'set') {
+      setPickerDate(currentDate);
+      if (mode === 'date') {
+        setMode('time');
+        setShowPicker(true);
+      } else {
+        handleAddTimestamp(selectedSubcategory, currentDate);
+        setMode('date');
       }
+    } else {
+      setMode('date');
     }
   };
 
+  if (loading) {
+    return <View style={styles.loadingContainer}><ActivityIndicator size="large" color="#10B981" /></View>;
+  }
+
   const subcategories = localCategories[selectedCategory] || [];
-  const subTimestamps = ((timestamps[selectedCategory] || {})[selectedSubcategory] || []).sort((a, b) => a - b);
+  const subTimestamps = ((timestamps[selectedCategory] || {})[selectedSubcategory] || []).sort((a, b) => b - a);
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Last Used App</Text>
-      <View style={styles.dropdownContainer}>
-        <Text style={styles.label}>Category</Text>
-        <Picker
-          selectedValue={selectedCategory}
-          style={styles.picker}
-          onValueChange={(itemValue) => {
-            setSelectedCategory(itemValue);
-            setSelectedSubcategory(localCategories[itemValue][0]);
-          }}
-        >
-          {Object.keys(localCategories).map((cat) => (
-            <Picker.Item label={cat} value={cat} key={cat} />
-          ))}
-        </Picker>
-      </View>
-      <View style={styles.dropdownContainer}>
-        <Text style={styles.label}>Subcategory</Text>
-        <Picker
-          selectedValue={selectedSubcategory}
-          style={styles.picker}
-          onValueChange={(itemValue) => setSelectedSubcategory(itemValue)}
-        >
-          {subcategories.map((subcat) => (
-            <Picker.Item label={subcat} value={subcat} key={subcat} />
-          ))}
-        </Picker>
-      </View>
-      <View style={styles.card}>
-        <Text style={styles.task}>{selectedSubcategory}</Text>
-        <TouchableOpacity style={styles.button} onPress={openPicker}>
-          <Text style={styles.buttonText}>Add Usage</Text>
-        </TouchableOpacity>
-        <Text style={styles.label}>History:</Text>
-        {subTimestamps.length === 0 ? (
-          <Text style={styles.time}>No timestamps yet.</Text>
-        ) : (
-          subTimestamps
-            .slice()
-            .reverse()
-            .map((ts, idx) => (
-              <View key={ts + idx} style={styles.timestampRow}>
-                <Text style={styles.time}>
-                  {dayjs(ts).format('YYYY-MM-DD HH:mm')} ({dayjs(ts).fromNow()})
-                </Text>
-                <TouchableOpacity
-                  style={styles.removeBtn}
-                  onPress={() => handleRemoveTimestamp(selectedSubcategory, ts)}
-                >
-                  <Text style={styles.removeText}>✕</Text>
-                </TouchableOpacity>
-              </View>
-            ))
+    <View style={{ flex: 1, backgroundColor: '#111827' }}>
+      <ScrollView contentContainerStyle={styles.container}>
+        <Animated.Text style={styles.title} entering={FadeInUp.duration(500)}>Track It</Animated.Text>
+
+        <Animated.View entering={FadeInUp.duration(500).delay(200)}>
+          <Text style={styles.label}>Category</Text>
+          <View style={styles.pickerContainer}>
+            <Picker
+              selectedValue={selectedCategory}
+              style={styles.picker}
+              itemStyle={styles.pickerItem}
+              dropdownIconColor="#10B981"
+              onValueChange={(itemValue) => {
+                setSelectedCategory(itemValue);
+                setSelectedSubcategory(localCategories[itemValue]?.[0] || '');
+              }}
+            >
+              {Object.keys(localCategories).map((cat) => (
+                <Picker.Item label={cat} value={cat} key={cat} />
+              ))}
+            </Picker>
+          </View>
+        </Animated.View>
+
+        <Animated.View entering={FadeInUp.duration(500).delay(400)}>
+          <Text style={styles.label}>Subcategory</Text>
+          <View style={styles.pickerContainer}>
+            <Picker
+              selectedValue={selectedSubcategory}
+              style={styles.picker}
+              itemStyle={styles.pickerItem}
+              dropdownIconColor="#10B981"
+              enabled={subcategories.length > 0}
+              onValueChange={(itemValue) => setSelectedSubcategory(itemValue)}
+            >
+              {subcategories.map((subcat) => (
+                <Picker.Item label={subcat} value={subcat} key={subcat} />
+              ))}
+            </Picker>
+          </View>
+        </Animated.View>
+
+        <Animated.View style={styles.card} entering={FadeInUp.duration(500).delay(600)}>
+          <Text style={styles.task}>{selectedSubcategory || 'Select a task'}</Text>
+          <Text style={styles.lastUsed}>
+            Last used: {subTimestamps.length > 0 ? dayjs(subTimestamps[0]).fromNow() : 'Never'}
+          </Text>
+          <TouchableOpacity style={styles.button} onPress={openPicker} disabled={!selectedSubcategory}>
+            <Feather name="plus-circle" size={20} color="#fff" />
+            <Text style={styles.buttonText}>Add Usage</Text>
+          </TouchableOpacity>
+
+          <View style={styles.historyContainer}>
+            <Text style={styles.historyTitle}>History</Text>
+            {subTimestamps.length === 0 ? (
+              <Text style={styles.historyTime}>No entries yet.</Text>
+            ) : (
+              subTimestamps.map((ts, idx) => (
+                <Animated.View key={ts + idx} style={styles.timestampRow} entering={FadeInDown.delay(idx * 50)}>
+                  <View style={styles.timestampTextContainer}>
+                    <Text style={styles.historyTime}>{dayjs(ts).format('MMM D, YYYY')}</Text>
+                    <Text style={styles.historyDate}>{dayjs(ts).format('h:mm A')}</Text>
+                  </View>
+                  <TouchableOpacity style={styles.removeBtn} onPress={() => handleRemoveTimestamp(selectedSubcategory, ts)}>
+                    <Feather name="trash-2" size={16} color="#F87171" />
+                  </TouchableOpacity>
+                </Animated.View>
+              ))
+            )}
+          </View>
+        </Animated.View>
+
+        {showPicker && (
+          <DateTimePicker value={pickerDate} mode={mode} display="default" onChange={onPickerChange} />
         )}
-      </View>
-      {showPicker && (
-        <DateTimePicker
-          value={pickerDate}
-          mode={mode}
-          display="default"
-          onChange={onPickerChange}
-        />
-      )}
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { padding: 24, backgroundColor: '#181A20', minHeight: '100%', marginTop: 40 },
-  title: { fontSize: 32, fontWeight: 'bold', color: '#fff', marginBottom: 24, textAlign: 'center', letterSpacing: 1 },
-  dropdownContainer: { marginBottom: 20 },
-  label: { color: '#00C896', fontSize: 16, marginBottom: 8, fontWeight: 'bold' },
-  picker: { backgroundColor: '#23272F', color: '#fff', borderRadius: 8 },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#111827' },
+  container: { padding: 24, backgroundColor: '#111827', minHeight: '100%', paddingTop: 60 },
+  title: { fontSize: 36, fontWeight: 'bold', color: '#fff', marginBottom: 24, textAlign: 'center' },
+  label: { color: '#9CA3AF', fontSize: 16, marginBottom: 8, marginLeft: 4 },
+  pickerContainer: { backgroundColor: '#1F2937', borderRadius: 12, marginBottom: 20 },
+  picker: { color: '#fff' },
+  pickerItem: { color: '#fff', fontSize: 16 },
   card: {
-    backgroundColor: '#23272F',
+    backgroundColor: '#1F2937',
     borderRadius: 20,
-    padding: 28,
+    padding: 24,
     alignItems: 'center',
-    shadowColor: '#00C896',
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
-    marginTop: 24,
-    marginBottom: 24
+    marginTop: 16,
   },
-  task: { fontSize: 22, fontWeight: 'bold', color: '#fff', marginBottom: 12, letterSpacing: 1 },
-  time: { marginVertical: 4, color: '#aaa', fontSize: 16 },
+  task: { fontSize: 24, fontWeight: 'bold', color: '#fff', textAlign: 'center' },
+  lastUsed: { color: '#9CA3AF', fontSize: 16, marginVertical: 8 },
   button: {
-    backgroundColor: '#00C896',
+    flexDirection: 'row',
+    backgroundColor: '#10B981',
     paddingVertical: 12,
-    paddingHorizontal: 36,
-    borderRadius: 10,
-    marginTop: 12,
-    marginBottom: 16,
-    shadowColor: '#00C896',
-    shadowOpacity: 0.4,
-    shadowRadius: 6,
-    elevation: 2
+    paddingHorizontal: 24,
+    borderRadius: 30,
+    marginTop: 16,
+    marginBottom: 24,
+    alignItems: 'center',
   },
-  buttonText: { color: '#fff', fontWeight: 'bold', fontSize: 17, letterSpacing: 1 },
+  buttonText: { color: '#fff', fontWeight: 'bold', fontSize: 16, marginLeft: 8 },
+  historyContainer: { width: '100%', marginTop: 16 },
+  historyTitle: { fontSize: 18, fontWeight: 'bold', color: '#fff', marginBottom: 8 },
   timestampRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#181A20',
+    backgroundColor: '#374151',
     borderRadius: 8,
-    padding: 8,
+    padding: 12,
     marginVertical: 4,
-    width: '100%',
     justifyContent: 'space-between'
   },
-  removeBtn: {
-    marginLeft: 12,
-    backgroundColor: '#ff4d4d',
-    borderRadius: 6,
-    padding: 4
+  timestampTextContainer: {
+    flex: 1,
   },
-  removeText: { color: '#fff', fontWeight: 'bold', fontSize: 16 }
+  historyTime: { color: '#D1D5DB', fontSize: 16 },
+  historyDate: { color: '#9CA3AF', fontSize: 12 },
+  removeBtn: {
+    padding: 8,
+  },
 });
 
 export default TaskList;
