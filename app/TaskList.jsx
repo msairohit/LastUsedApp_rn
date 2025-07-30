@@ -207,7 +207,7 @@ const TaskList = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { padding: 24, backgroundColor: '#181A20', minHeight: '100%' },
+  container: { padding: 24, backgroundColor: '#181A20', minHeight: '100%', marginTop: 40 },
   title: { fontSize: 32, fontWeight: 'bold', color: '#fff', marginBottom: 24, textAlign: 'center', letterSpacing: 1 },
   dropdownContainer: { marginBottom: 20 },
   label: { color: '#00C896', fontSize: 16, marginBottom: 8, fontWeight: 'bold' },
