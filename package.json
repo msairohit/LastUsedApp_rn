@@ -5,7 +5,9 @@
   "scripts": {
     "start": "expo start",
     "start-tunnel": "npx expo start --tunnel",
-    "start-clearcache-tunnel": "npx expo start --clear --tunnel"
+    "start-clearcache-tunnel": "npx expo start --clear --tunnel",
+    "android": "expo run:android",
+    "ios": "expo run:ios"
   },
   "dependencies": {
     "@expo/vector-icons": "^14.0.0",
@@ -21,7 +23,9 @@
     "firebase": "^12.0.0",
     "react": "19.0.0",
     "react-native": "0.79.5",
+    "react-native-gesture-handler": "~2.24.0",
     "react-native-reanimated": "~3.17.4",
-    "react-native-gesture-handler": "~2.24.0"
+    "react-native-safe-area-context": "5.4.0",
+    "react-native-screens": "~4.11.1"
   }
 }

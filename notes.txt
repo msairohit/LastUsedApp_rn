@@ -1,8 +1,17 @@
-Add a new page to manage categories (categoryManager).
+(done) Add a new page to manage categories (categoryManager).
 (done) Save to DB instead of local storage.
-Login functionality
-UI update.
+(done) Login functionality
+(done) UI update.
 
 Gemini API Key: AIzaSyBlcSkANHuZ4qez4i4K48i4B7h-98I7H54
 for gemini ai:
 If the output limit is exceeding instead of removing entirely, as I told earlier, give me the 1st file and then tell me what are the next steps, I will apply that change and request for the next set of file changes as a new query. pls make this apply to the profile and follow this from now on
+
+adb logcat -c
+adb logcat AndroidRuntime:E *:S (this will give u the exact error message for the app crashing issue.)
+
+rd /s /q node_modules android      # (on Windows, deletes node_modules + android folder)
+del package-lock.json yarn.lock    # (delete lockfiles)
+npm install
+npx expo prebuild --clean
+npx expo run:android --variant release

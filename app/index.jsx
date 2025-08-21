@@ -7,10 +7,19 @@ import { createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthState
 import { auth, db } from '../configs/firebaseConfig';
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withSpring, FadeInUp, FadeInDown } from 'react-native-reanimated';
+import { LogBox } from 'react-native';
+import { enableScreens } from 'react-native-screens';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export default function HomePage() {
+    enableScreens();
+    LogBox.ignoreAllLogs(); // For debugging, remove in production
+
+    ErrorUtils.setGlobalHandler((error, isFatal) => {
+        // You can log to a service here
+        console.error(error);
+    });
     const router = useRouter();
     const [loading, setLoading] = React.useState(true);
     const [email, setEmail] = React.useState('');
